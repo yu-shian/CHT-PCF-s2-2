@@ -1,0 +1,5 @@
+{
+  "name": "ISO 14067 產品碳足跡計算器",
+  "description": "專業級產品碳足跡計算工具，支援契約管理、多產品填報、即時圖表分析與 Google Sheet 係數同步。",
+  "requestFramePermissions": []
+}

@@ -14,6 +14,7 @@ export interface MaterialItem {
   factorId: string;
   customFactor: number;
   useDb: boolean;
+  customUnit?: string;
 }
 
 export interface UpstreamTransport {
@@ -27,6 +28,7 @@ export interface UpstreamTransport {
 export interface ManufacturingConfig {
   mode: 'perUnit' | 'totalAllocated';
   electricityUsage: number;
+  electricityFactor: number;
   totalOutput: number;
 }
 

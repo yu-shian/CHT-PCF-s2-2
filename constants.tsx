@@ -1,9 +1,9 @@
 
 import React from 'react';
-import { 
-  Plus, Trash2, Info, ChevronRight, FileText, Truck, 
-  Factory, Box, Save, AlertTriangle, CheckCircle, 
-  Search, X, Database, ChevronDown 
+import {
+  Plus, Trash2, Info, ChevronRight, FileText, Truck,
+  Factory, Box, Save, AlertTriangle, CheckCircle,
+  Search, X, Database, ChevronDown
 } from 'lucide-react';
 import { TransportFactor } from './types';
 
@@ -18,10 +18,9 @@ export const INITIAL_MATERIAL_DB = [
 ];
 
 export const ELECTRICITY_FACTORS: Record<number, number> = {
-  2023: 0.495,
-  2024: 0.494,
-  2025: 0.474,
-  2026: 0.455,
+  2022: 0.495,
+  2023: 0.494,
+  2024: 0.474,
 };
 
 export const TRANSPORT_FACTORS: TransportFactor[] = [
@@ -32,4 +31,4 @@ export const TRANSPORT_FACTORS: TransportFactor[] = [
   { id: 't5', name: '國際航運', factor: 1.16, unit: 'kgCO₂e/t-km' },
 ];
 
-export const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1KicP3sEwRexAy8M3A2xRcQIMbwcB_cmlYEsRWKK_FTw/export?format=csv';
+export const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1KicP3sEwRexAy8M3A2xRcQIMbwcB_cmlYEsRWKK_FTw/export?format=csv&gid=0';

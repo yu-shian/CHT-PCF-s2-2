@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中華電信 | 供應商勞務契約碳排放回報系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --cht-blue: #005CAF;
+            --cht-light-blue: #E6F0F9;
+        }
+        body {
+            background-color: #f4f7f9;
+            font-family: "PingFang TC", "Microsoft JhengHei", sans-serif;
+        }
+        .step-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+            padding: 2rem;
+            border-left: 6px solid var(--cht-blue);
+        }
+        .btn-primary {
+            background-color: var(--cht-blue);
+            transition: all 0.3s;
+        }
+        .btn-primary:hover {
+            background-color: #004a8d;
+            transform: translateY(-1px);
+        }
+        .input-group label {
+            display: block;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 0.5rem;
+        }
+        .input-field {
+            width: 100%;
+            padding: 0.6rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+        .result-box {
+            background: linear-gradient(135deg, #005CAF 0%, #0078D4 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <header class="flex items-center justify-between mb-8">
+            <div class="flex items-center">
+                <div class="text-3xl font-bold text-blue-800 mr-2">CHT</div>
+                <div class="h-8 w-px bg-gray-300 mx-3"></div>
+                <h1 class="text-xl font-bold text-gray-700 text-blue-900">供應商碳管理平台 - 勞務作業回報</h1>
+            </div>
+            <div class="text-sm text-gray-500 font-medium">系統狀態：計算中</div>
+        </header>
+
+        <!-- Step 1: 契約基本資料 -->
+        <section class="step-card">
+            <h2 class="text-lg font-bold text-blue-800 mb-4 flex items-center">
+                <span class="bg-blue-800 text-white rounded-full w-6 h-6 flex items-center justify-center mr-2 text-sm">1</span>
+                契約基本資料
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="input-group">
+                    <label>契約編號</label>
+                    <input type="text" id="contractId" placeholder="例如：CHT-2024-XXXX" class="input-field">
+                </div>
+                <div class="input-group">
+                    <label>契約名稱</label>
+                    <input type="text" id="contractName" placeholder="例如：113年基站維修勞務作業" class="input-field">
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 2: 工時投入分攤 -->
+        <section class="step-card">
+            <h2 class="text-lg font-bold text-blue-800 mb-4 flex items-center">
+                <span class="bg-blue-800 text-white rounded-full w-6 h-6 flex items-center justify-center mr-2 text-sm">2</span>
+                工時投入分攤 (核算權重)
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="input-group">
+                    <label>本項契約總工時 (HR)</label>
+                    <input type="number" id="contractHours" oninput="calculateTotal()" placeholder="本案投入時數" class="input-field">
+                </div>
+                <div class="input-group">
+                    <label>公司同期間總工時 (HR)</label>
+                    <input type="number" id="totalCompanyHours" oninput="calculateTotal()" placeholder="全公司總工時" class="input-field">
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 3: 碳排來源選擇 -->
+        <section class="step-card">
+            <h2 class="text-lg font-bold text-blue-800 mb-4 flex items-center">
+                <span class="bg-blue-800 text-white rounded-full w-6 h-6 flex items-center justify-center mr-2 text-sm">3</span>
+                排放數據填寫
+            </h2>
+
+            <div class="mb-6">
+                <label class="font-semibold mb-2 block text-gray-600 text-sm italic">請選擇數據來源模式：</label>
+                <div class="flex space-x-4">
+                    <label class="inline-flex items-center cursor-pointer">
+                        <input type="radio" name="mode" value="A" checked onchange="toggleMode()" class="form-radio text-blue-600">
+                        <span class="ml-2">模式 A：直接填寫總排放量</span>
+                    </label>
+                    <label class="inline-flex items-center cursor-pointer">
+                        <input type="radio" name="mode" value="B" onchange="toggleMode()" class="form-radio text-blue-600">
+                        <span class="ml-2">模式 B：能源活動數據 (推薦)</span>
+                    </label>
+                </div>
+            </div>
+
+            <div id="modeA" class="space-y-4">
+                <div class="input-group">
+                    <label>公司該期間總碳排放量 (kg CO2e)</label>
+                    <input type="number" id="totalEmissionsA" oninput="calculateTotal()" placeholder="請參考公司 ISO 14064-1 盤查報告" class="input-field">
+                </div>
+            </div>
+
+            <div id="modeB" class="hidden space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
+                    <div class="input-group">
+                        <label>電力年份係數</label>
+                        <select id="elecYear" onchange="calculateTotal()" class="input-field">
+                            <option value="0.495">2022年 (0.495 kg/kWh)</option>
+                            <option value="0.494">2023年 (0.494 kg/kWh)</option>
+                            <option value="0.474">2024年 (0.474 kg/kWh)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>總用電量 (kWh)</label>
+                        <input type="number" id="elecUsage" oninput="calculateTotal()" class="input-field">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="input-group p-4 border rounded-lg">
+                        <label class="text-orange-700">汽油總量 (L)</label>
+                        <input type="number" id="gasolineUsage" oninput="calculateTotal()" class="input-field border-orange-200">
+                    </div>
+                    <div class="input-group p-4 border rounded-lg">
+                        <label class="text-blue-700">柴油總量 (L)</label>
+                        <input type="number" id="dieselUsage" oninput="calculateTotal()" class="input-field border-blue-200">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final Calculation Result -->
+        <section class="result-box shadow-xl">
+            <div class="text-blue-100 text-sm uppercase tracking-widest mb-1 font-bold">契約執行碳排放核算結果</div>
+            <div class="text-6xl font-black mb-2">
+                <span id="finalResult">0.00</span> <span class="text-xl font-normal">kg CO2e</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mt-4 border-t border-blue-400 pt-4 text-sm font-medium">
+                <div>工時分攤佔比：<span id="hourRatioDisplay">0</span>%</div>
+                <div>基準總排放：<span id="totalCompanyDisplay">0</span> kg</div>
+            </div>
+        </section>
+
+        <div class="mt-6 flex flex-col items-center">
+            <button onclick="generateReport()" class="btn-primary text-white font-bold py-4 px-12 rounded-full shadow-lg flex items-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>確認並生成報表 (Google Sheets 相容格式)</span>
+            </button>
+            <p class="mt-3 text-xs text-gray-400 italic">※ 點擊後將下載詳細計算報表，您可以上傳至 Google Sheets 進行管理。</p>
+        </div>
+
+        <footer class="mt-12 text-center text-gray-400 text-xs">
+            © 2025 中華電信供應商永續管理系統 | ISO 14064-1 & 範疇三勞務計算模組
+        </footer>
+    </div>
+
+    <script>
+        const GWP = { CO2: 1, CH4: 28, N2O: 265 };
+        const CONVERSION_FACTOR = 4.1868 * Math.pow(10, -9); 
+
+        const FUEL_DATA = {
+            gasoline: { name: "汽油", kcal: 7609, ef: { CO2: 69300, CH4: 25, N2O: 8 } },
+            diesel: { name: "柴油", kcal: 8642, ef: { CO2: 74100, CH4: 3, N2O: 0.6 } }
+        };
+
+        function toggleMode() {
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            document.getElementById('modeA').classList.toggle('hidden', mode !== 'A');
+            document.getElementById('modeB').classList.toggle('hidden', mode !== 'B');
+            calculateTotal();
+        }
+
+        function calculateFuelEmission(amount, type) {
+            if (!amount || amount <= 0) return 0;
+            const d = FUEL_DATA[type];
+            const co2 = amount * d.kcal * CONVERSION_FACTOR * d.ef.CO2 * GWP.CO2;
+            const ch4 = amount * d.kcal * CONVERSION_FACTOR * d.ef.CH4 * GWP.CH4;
+            const n2o = amount * d.kcal * CONVERSION_FACTOR * d.ef.N2O * GWP.N2O;
+            return co2 + ch4 + n2o;
+        }
+
+        function calculateTotal() {
+            const contractH = parseFloat(document.getElementById('contractHours').value) || 0;
+            const totalH = parseFloat(document.getElementById('totalCompanyHours').value) || 0;
+            const ratio = (totalH > 0) ? (contractH / totalH) : 0;
+            
+            document.getElementById('hourRatioDisplay').innerText = (ratio * 100).toFixed(2);
+
+            let totalCompanyEmissions = 0;
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+
+            if (mode === 'A') {
+                totalCompanyEmissions = parseFloat(document.getElementById('totalEmissionsA').value) || 0;
+            } else {
+                const elecFactor = parseFloat(document.getElementById('elecYear').value);
+                const elecUsage = parseFloat(document.getElementById('elecUsage').value) || 0;
+                const gasUsage = parseFloat(document.getElementById('gasolineUsage').value) || 0;
+                const dieUsage = parseFloat(document.getElementById('dieselUsage').value) || 0;
+                
+                totalCompanyEmissions = (elecUsage * elecFactor) + 
+                                       calculateFuelEmission(gasUsage, 'gasoline') + 
+                                       calculateFuelEmission(dieUsage, 'diesel');
+            }
+
+            document.getElementById('totalCompanyDisplay').innerText = totalCompanyEmissions.toLocaleString(undefined, {maximumFractionDigits: 2});
+            const finalResult = totalCompanyEmissions * ratio;
+            document.getElementById('finalResult').innerText = finalResult.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            
+            return { ratio, totalCompanyEmissions, finalResult };
+        }
+
+        function generateReport() {
+            const contractId = document.getElementById('contractId').value || "Unknown_ID";
+            const contractName = document.getElementById('contractName').value || "未命名契約";
+            const { ratio, totalCompanyEmissions, finalResult } = calculateTotal();
+
+            if (finalResult <= 0) {
+                alert("請先輸入數據再生成報表！");
+                return;
+            }
+
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            let rows = [
+                ["中華電信供應商碳管理回報報表", ""],
+                ["報表生成時間", new Date().toLocaleString()],
+                ["", ""],
+                ["[1] 契約基本資料", ""],
+                ["契約編號", contractId],
+                ["契約名稱", contractName],
+                ["", ""],
+                ["[2] 分攤邏輯與計算過程", ""],
+                ["本項契約總工時 (HR)", document.getElementById('contractHours').value],
+                ["全公司同期間總工時 (HR)", document.getElementById('totalCompanyHours').value],
+                ["分攤比例 (工時比)", (ratio * 100).toFixed(4) + "%"],
+                ["公式", "契約碳排 = 公司總排放 * 分攤比例"],
+                ["", ""]
+            ];
+
+            if (mode === 'A') {
+                rows.push(["[3] 排放數據數據 (模式 A)", ""]);
+                rows.push(["直接填報公司總排放量 (kg CO2e)", totalCompanyEmissions]);
+            } else {
+                const elecFactor = document.getElementById('elecYear').value;
+                const elecUsage = document.getElementById('elecUsage').value || 0;
+                const gas = document.getElementById('gasolineUsage').value || 0;
+                const die = document.getElementById('dieselUsage').value || 0;
+
+                rows.push(["[3] 能源活動數據 (模式 B)", ""]);
+                rows.push(["電力度數 (kWh)", elecUsage]);
+                rows.push(["電力係數 (kg CO2e/kWh)", elecFactor]);
+                rows.push(["汽油用量 (L)", gas]);
+                rows.push(["柴油用量 (L)", die]);
+                rows.push(["", ""]);
+                rows.push(["[4] 核心技術係數備註", ""]);
+                rows.push(["GWP 來源", "IPCC AR5 (CO2:1, CH4:28, N2O:265)"]);
+                rows.push(["汽油低位熱值", "7609 kcal/L"]);
+                rows.push(["柴油低位熱值", "8642 kcal/L"]);
+                rows.push(["單位轉換因子 (TJ/kcal)", CONVERSION_FACTOR]);
+            }
+
+            rows.push(["", ""]);
+            rows.push(["[5] 核算結果", ""]);
+            rows.push(["公司總排放量 (kg CO2e)", totalCompanyEmissions.toFixed(2)]);
+            rows.push(["契約執行分攤排放量 (kg CO2e)", finalResult.toFixed(2)]);
+
+            // CSV 導出 logic
+            let csvContent = "\uFEFF"; // UTF-8 BOM
+            rows.forEach(row => {
+                csvContent += row.join(",") + "\n";
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `CHT_ESG_Report_${contractId}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>

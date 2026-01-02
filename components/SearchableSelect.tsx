@@ -16,12 +16,12 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
   const [searchTerm, setSearchTerm] = useState('');
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null); 
-  
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const selected = options.find(o => o.id === value);
     if (selected) {
-      setSearchTerm(`${selected.name} (${selected.factor} ${selected.unit1}/${selected.unit2})`);
+      setSearchTerm(`${selected.name} 係數: ${selected.factor.toFixed(4)} ${selected.unit1}/${selected.unit2}`);
     } else if (value === '') {
       setSearchTerm('');
     }
@@ -33,14 +33,14 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
   };
 
   useEffect(() => {
-     if (isOpen && wrapperRef.current) {
-         const rect = wrapperRef.current.getBoundingClientRect();
-         setPosition({
-             top: rect.bottom + window.scrollY, 
-             left: rect.left + window.scrollX,
-             width: rect.width
-         });
-     }
+    if (isOpen && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width
+      });
+    }
   }, [isOpen]);
 
   useEffect(() => {
@@ -52,9 +52,9 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
         setIsOpen(false);
         const selected = options.find(o => o.id === value);
         if (selected) {
-            setSearchTerm(`${selected.name} (${selected.factor} ${selected.unit1}/${selected.unit2})`);
+          setSearchTerm(`${selected.name} 係數: ${selected.factor.toFixed(4)} ${selected.unit1}/${selected.unit2}`);
         } else if (value === '') {
-            setSearchTerm(''); 
+          setSearchTerm('');
         }
       }
     }
@@ -63,33 +63,33 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
   }, [value, options]);
 
   const filteredOptions = options.filter(opt => {
-     const label = `${opt.name} (${opt.factor} ${opt.unit1}/${opt.unit2})`;
-     return label.toLowerCase().includes(searchTerm.toLowerCase());
+    const label = `${opt.name} 係數: ${opt.factor.toFixed(4)} ${opt.unit1}/${opt.unit2}`;
+    return label.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   const portalContent = isOpen ? (
-    <div 
-      ref={dropdownRef} 
+    <div
+      ref={dropdownRef}
       className="fixed z-[9999] bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto shadow-2xl text-sm font-sans ring-1 ring-black ring-opacity-5 animate-in fade-in slide-in-from-top-2 duration-100"
       style={{
-          top: `${position.top}px`,
-          left: `${position.left}px`,
-          width: `${position.width}px`
+        top: `${position.top}px`,
+        left: `${position.left}px`,
+        width: `${position.width}px`
       }}
     >
       {filteredOptions.length > 0 ? (
         filteredOptions.map(opt => (
-          <div 
+          <div
             key={opt.id}
             className={`px-4 py-3 cursor-pointer hover:bg-blue-50 border-b border-gray-50 last:border-none transition-colors ${opt.id === value ? 'bg-blue-50 font-semibold text-blue-700' : 'text-gray-700'}`}
             onMouseDown={() => {
-                onChange(opt.id);
-                setIsOpen(false);
+              onChange(opt.id);
+              setIsOpen(false);
             }}
           >
             <div className="font-semibold">{opt.name}</div>
             <div className="text-xs text-gray-500 mt-0.5">
-                係數: {opt.factor} {opt.unit1}/${opt.unit2}
+              係數: {opt.factor.toFixed(4)} {opt.unit1}/{opt.unit2}
             </div>
           </div>
         ))
@@ -111,19 +111,19 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
           onFocus={() => setIsOpen(true)}
         />
         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 flex items-center">
-           {searchTerm && (
-               <X 
-                 size={16} 
-                 className="cursor-pointer hover:text-gray-600 mr-1"
-                 onClick={(e) => {
-                     e.stopPropagation();
-                     onChange(''); 
-                     setSearchTerm('');
-                     setIsOpen(true);
-                 }}
-               />
-           )}
-           {!searchTerm && <Search size={16} />}
+          {searchTerm && (
+            <X
+              size={16}
+              className="cursor-pointer hover:text-gray-600 mr-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange('');
+                setSearchTerm('');
+                setIsOpen(true);
+              }}
+            />
+          )}
+          {!searchTerm && <Search size={16} />}
         </div>
       </div>
       {ReactDOM.createPortal(portalContent, document.body)}

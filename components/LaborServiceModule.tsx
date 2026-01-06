@@ -18,6 +18,8 @@ interface LaborServiceModuleProps {
         elecUsage: number | '';
         gasolineUsage: number | '';
         dieselUsage: number | '';
+        dieselMobileUsage: number | '';
+        elecFactor?: number;
     };
     onDataChange?: (data: any) => void;
     externalContractInfo?: { id: string; name: string };
@@ -56,6 +58,7 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
     const [elecUsageInternal, setElecUsageInternal] = useState<number | ''>('');
     const [gasolineUsageInternal, setGasolineUsageInternal] = useState<number | ''>('');
     const [dieselUsageInternal, setDieselUsageInternal] = useState<number | ''>('');
+    const [dieselMobileUsageInternal, setDieselMobileUsageInternal] = useState<number | ''>('');
 
     // Mapping states to use either external or internal values
     const contractId = externalContractInfo?.id ?? contractIdInternal;
@@ -68,6 +71,7 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
     const elecUsage = externalData?.elecUsage ?? elecUsageInternal;
     const gasolineUsage = externalData?.gasolineUsage ?? gasolineUsageInternal;
     const dieselUsage = externalData?.dieselUsage ?? dieselUsageInternal;
+    const dieselMobileUsage = externalData?.dieselMobileUsage ?? dieselMobileUsageInternal;
 
     // Helper to update both internal and external state
     const updateField = (field: string, value: any) => {
@@ -80,6 +84,8 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
                 elecUsage,
                 gasolineUsage,
                 dieselUsage,
+                dieselMobileUsage,
+                elecFactor: Number(field === 'elecYear' ? value : elecYear),
                 [field]: value
             });
         }
@@ -93,6 +99,7 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
             case 'elecUsage': setElecUsageInternal(value); break;
             case 'gasolineUsage': setGasolineUsageInternal(value); break;
             case 'dieselUsage': setDieselUsageInternal(value); break;
+            case 'dieselMobileUsage': setDieselMobileUsageInternal(value); break;
         }
     };
 
@@ -126,7 +133,7 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
             totalCompanyEmissions,
             finalResult
         };
-    }, [contractHours, totalCompanyHours, mode, totalEmissionsA, elecYear, elecUsage, gasolineUsage, dieselUsage]);
+    }, [contractHours, totalCompanyHours, mode, totalEmissionsA, elecYear, elecUsage, gasolineUsage, dieselUsage, dieselMobileUsage]);
 
     // Report Total Change
     useEffect(() => {
@@ -169,12 +176,13 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
             rows.push(["電力度數 (kWh)", String(elecUsage || 0)]);
             rows.push(["電力係數 (kg CO2e/kWh)", elecYear]);
             rows.push(["汽油用量 (L)", String(gasolineUsage || 0)]);
-            rows.push(["柴油用量 (L)", String(dieselUsage || 0)]);
+            rows.push(["柴油 - 固定源用量 (L)", String(dieselUsage || 0)]);
+            rows.push(["柴油 - 移動源用量 (L)", String(dieselMobileUsage || 0)]);
             rows.push(["", ""]);
             rows.push(["[4] 核心技術係數備註", ""]);
-            rows.push(["GWP 來源", "IPCC AR5 (CO2:1, CH4:28, N2O:265)"]);
+            rows.push(["GWP 來源", "IPCC AR6 (CO2:1, CH4:27, N2O:273)"]);
             rows.push(["汽油低位熱值", "7609 kcal/L"]);
-            rows.push(["柴油低位熱值", "8642 kcal/L"]);
+            rows.push(["柴油熱值 (固定/移動)", "8642 kcal/L"]);
             rows.push(["單位轉換因子 (TJ/kcal)", String(CONVERSION_FACTOR)]);
         }
 
@@ -210,8 +218,26 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
                     <div className="h-8 w-px bg-gray-300 mx-3 hidden md:block"></div>
                     <h1 className="text-xl font-bold text-blue-900">勞務 / 安裝作業</h1>
                 </div>
-                <div className="text-sm text-gray-500 font-medium bg-gray-100 px-3 py-1 rounded-full w-fit">
-                    系統狀態：計算中
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center space-x-2 bg-indigo-50 px-4 py-2 rounded-2xl border border-indigo-100 shadow-sm">
+                        <label className="text-sm font-black text-indigo-900 whitespace-nowrap">評估年度</label>
+                        <select
+                            className="bg-white border-slate-200 text-sm font-bold rounded-xl py-1 pl-2 pr-8 focus:ring-2 focus:ring-indigo-200 cursor-pointer"
+                            value={elecYear}
+                            onChange={e => {
+                                const val = e.target.value;
+                                setElecYear(val);
+                                updateField('elecYear', val);
+                            }}
+                        >
+                            {Object.entries(ELECTRICITY_FACTORS).map(([year, factor]) => (
+                                <option key={year} value={factor}>{year}年 ({factor} kg CO₂e/kWh)</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="text-sm text-gray-500 font-medium bg-gray-100 px-3 py-1 rounded-full w-fit">
+                        系統狀態：計算中
+                    </div>
                 </div>
             </header>
 
@@ -318,7 +344,7 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
                     <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                         <div className="space-y-4">
                             <div>
-                                <label className="block font-semibold text-gray-700 mb-2">公司該期間總碳排放量 (kg CO2e)</label>
+                                <label className="block font-semibold text-gray-700 mb-2">公司該期間總碳排放量 (<span style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span>)</label>
                                 <PrecisionNumberInput
                                     placeholder="請參考公司 ISO 14064-1 盤查報告"
                                     className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all outline-none"
@@ -331,21 +357,7 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
                 ) : (
                     <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-blue-50 rounded-xl border border-blue-100">
-                            {externalFactor === undefined && (
-                                <div>
-                                    <label className="block font-semibold text-blue-900 mb-2">電力年份係數</label>
-                                    <select
-                                        className="w-full p-2.5 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-500 bg-white"
-                                        value={elecYear}
-                                        onChange={e => setElecYear(e.target.value)}
-                                    >
-                                        {Object.entries(ELECTRICITY_FACTORS).map(([year, factor]) => (
-                                            <option key={year} value={factor}>{year}年 ({factor} kg/kWh)</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-                            <div className={externalFactor !== undefined ? "col-span-2" : ""}>
+                            <div className="col-span-2">
                                 <label className="block font-semibold text-blue-900 mb-2">總用電量 (kWh)</label>
                                 <PrecisionNumberInput
                                     className="w-full p-2.5 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all outline-none"
@@ -364,13 +376,23 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
                                     onChange={val => updateField('gasolineUsage', val)}
                                 />
                             </div>
-                            <div className="p-6 border border-indigo-200 rounded-xl bg-indigo-50/50">
-                                <label className="block font-semibold text-indigo-900 mb-2">柴油總量 (L)</label>
+                            <div className="p-6 border border-emerald-200 rounded-xl bg-emerald-50/50">
+                                <label className="block font-semibold text-emerald-900 mb-2">柴油 - 固定源 (L)</label>
                                 <PrecisionNumberInput
-                                    className="w-full p-2.5 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white transition-all outline-none"
+                                    className="w-full p-2.5 border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 bg-white transition-all outline-none"
                                     value={Number(dieselUsage)}
                                     onChange={val => updateField('dieselUsage', val)}
                                 />
+                                <span className="text-[10px] text-emerald-600/60 mt-1 block">發電機、鍋爐等固定設施</span>
+                            </div>
+                            <div className="p-6 border border-indigo-200 rounded-xl bg-indigo-50/50">
+                                <label className="block font-semibold text-indigo-900 mb-2">柴油 - 移動源 (L)</label>
+                                <PrecisionNumberInput
+                                    className="w-full p-2.5 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white transition-all outline-none"
+                                    value={Number(dieselMobileUsage)}
+                                    onChange={val => updateField('dieselMobileUsage', val)}
+                                />
+                                <span className="text-[10px] text-indigo-600/60 mt-1 block">工程車輛、貨車等交通工具</span>
                             </div>
                         </div>
                     </div>
@@ -382,7 +404,7 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
                 <div className="text-blue-200 text-sm uppercase tracking-widest mb-2 font-black">契約執行碳排放核算結果</div>
                 <div className="text-5xl font-black mb-4 tabular-nums tracking-tight">
                     {calculation.finalResult.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
-                    <span className="text-2xl font-medium ml-2 opacity-80">kg CO2e</span>
+                    <span className="text-2xl font-medium ml-2 opacity-80" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 border-t border-blue-500/50 pt-6 text-sm font-medium text-blue-100">
                     <div className="flex justify-between md:justify-start md:space-x-4">
@@ -391,7 +413,7 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
                     </div>
                     <div className="flex justify-between md:justify-start md:space-x-4">
                         <span className="opacity-70">基準總排放</span>
-                        <span className="font-bold text-white">{calculation.totalCompanyEmissions.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} kg</span>
+                        <span className="font-bold text-white">{calculation.totalCompanyEmissions.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} <span style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span></span>
                     </div>
                 </div>
             </section>

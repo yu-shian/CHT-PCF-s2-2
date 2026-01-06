@@ -33,6 +33,7 @@ export interface ManufacturingConfig {
 }
 
 export interface DownstreamTransport {
+  id: number;
   weight: number;
   distance: number;
   vehicleId: string;
@@ -47,7 +48,7 @@ export interface Product {
   materials: MaterialItem[];
   upstreamTransport: UpstreamTransport[];
   manufacturing: ManufacturingConfig;
-  downstreamTransport: DownstreamTransport;
+  downstreamTransport: DownstreamTransport[];
 }
 
 export interface Contract {

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ProductPCFModule from './ProductPCFModule';
 import LaborServiceModule from './LaborServiceModule';
-import { Layers, Calendar, Box, FileText, Truck, Factory, Package, Plus, User, Info, Download } from 'lucide-react';
+import { Layers, Calendar, Box, FileText, Truck, Factory, Package, Plus, User, Info, Download, Trash2 } from 'lucide-react';
 import { ELECTRICITY_FACTORS, INITIAL_MATERIAL_DB, GOOGLE_SHEET_CSV_URL, TRANSPORT_FACTORS } from '../constants';
 import StackedBarChart from './StackedBarChart';
 import { Contract, MaterialFactor, Product } from '../types';
-import { calculateProductTotal, calculateLaborTotal, parseCSVLine } from '../utils';
+import { calculateProductTotal, calculateLaborTotal, parseCSVLine, calculateFuelEmission } from '../utils';
 
 const ComprehensiveModule: React.FC = () => {
     const [productTotal, setProductTotal] = useState(0);
@@ -22,7 +22,9 @@ const ComprehensiveModule: React.FC = () => {
         totalEmissionsA: '' as number | '',
         elecUsage: '' as number | '',
         gasolineUsage: '' as number | '',
-        dieselUsage: '' as number | ''
+        dieselUsage: '' as number | '',
+        dieselMobileUsage: '' as number | '',
+        elecFactor: 0.495
     });
 
     const [globalYear, setGlobalYear] = useState(2023);
@@ -30,6 +32,7 @@ const ComprehensiveModule: React.FC = () => {
     const [contracts, setContracts] = useState<Contract[]>([]);
     const [activeProductId, setActiveProductId] = useState<number | null>(null);
     const [addTrigger, setAddTrigger] = useState(0);
+    const [deleteId, setDeleteId] = useState<number | null>(null);
 
     const electricityFactor = ELECTRICITY_FACTORS[globalYear] || 0.495;
     const grandTotal = aggregateTotal + laborTotal;
@@ -83,23 +86,23 @@ const ComprehensiveModule: React.FC = () => {
         rows.push(["契約編號", cid]);
         rows.push(["契約名稱", cname]);
         rows.push(["評估年度", globalYear + "年"]);
-        rows.push(["電力係數", electricityFactor.toFixed(4) + " kgCO2e/kWh"]);
         rows.push(["", ""]);
 
         // Part 1 details
         rows.push(["[PART 1] 產品設備明細 (Detailed Product Breakdown)", ""]);
-        rows.push(["項目類別", "名稱", "載重重量 (kg)", "運送距離 (km)", "碳排係數(C)", "排放單位(D)", "宣告單位(F)", "碳排放量 (kgCO2e)"]);
+        rows.push(["項目類別", "名稱", "載重重量 (kg)", "運送距離 (km)", "碳排係數(C)", "排放單位(D)", "宣告單位(F)", "碳排放量 (kg CO2e)"]);
 
-        products.forEach(p => {
+        products.forEach((p, index) => {
             const calc = calculateProductTotal(p, materialDB, electricityFactor);
+            const displayName = p.name && !p.name.startsWith('產品 ') ? p.name : `產品 ${String(index + 1).padStart(2, '0')}`;
             // Product Group Header
-            rows.push(["[產品小計]", p.name, "-", "-", "-", "-", "-", calc.total.toFixed(4)]);
+            rows.push(["[產品小計]", displayName, "-", "-", "-", "-", "-", calc.total.toFixed(4)]);
 
             // Stage A: Materials
             p.materials.forEach(m => {
                 const dbFactor = m.useDb ? materialDB.find(db => db.id === m.factorId) : null;
                 const f = dbFactor ? dbFactor.factor : (m.customFactor || 0);
-                const u1 = dbFactor ? dbFactor.unit1 : (m.customUnit || "kgCO2e");
+                const u1 = dbFactor ? dbFactor.unit1 : (m.customUnit || "kg CO2e");
                 const u2 = dbFactor ? dbFactor.unit2 : (m.customUnit || "kg");
                 const emission = (Number(m.weight) || 0) * f;
                 rows.push(["  (A) 原料零件", m.name || "(未命名)", Number(m.weight) || 0, "-", f.toFixed(4), u1, u2, emission.toFixed(4)]);
@@ -113,22 +116,26 @@ const ComprehensiveModule: React.FC = () => {
                 const f = vehicle ? vehicle.factor : 0;
                 const vName = vehicle ? vehicle.name : "未知載具";
                 const emission = (Number(t.weight) / 1000) * Number(t.distance) * f;
-                rows.push(["  (B) 原料運輸", materialName + " 運送 (" + vName + ")", Number(t.weight) || 0, Number(t.distance) || 0, f.toFixed(4), "kgCO2e", "t*km", emission.toFixed(4)]);
+                rows.push(["  (B) 原料運輸", displayName + " - " + materialName + " 運送 (" + vName + ")", Number(t.weight) || 0, Number(t.distance) || 0, f.toFixed(4), "kg CO2e", "t*km", emission.toFixed(4)]);
             });
 
-            // Stage C: Manufacturing (Electricity)
+            // Stage C: Manufacturing - 強制固定為 0.606
+            const cFactor = 0.606;
             const unitElec = p.manufacturing.mode === 'perUnit'
-                ? Number(p.manufacturing.electricityUsage) || 0
-                : (Number(p.manufacturing.electricityUsage) || 0) / (Number(p.manufacturing.totalOutput) || 1);
-            rows.push(["  (C) 製造電力", p.name + " 生產", unitElec.toFixed(4), "-", electricityFactor.toFixed(4), "kgCO2e", "kWh", calc.C.toFixed(4)]);
+                ? p.manufacturing.electricityUsage
+                : (p.manufacturing.totalOutput > 0 ? p.manufacturing.electricityUsage / p.manufacturing.totalOutput : 0);
+            rows.push(["  (C) 製造電力", displayName + " 生產 (電力碳足跡係數: 0.606)", unitElec.toFixed(4), "-", cFactor.toFixed(4), "kg CO2e", "kWh", calc.C.toFixed(4)]);
 
             // Stage D: Downstream Transport
-            const dWeight = Number(p.downstreamTransport.weight) || 0;
-            const dDist = Number(p.downstreamTransport.distance) || 0;
-            const dVehicle = TRANSPORT_FACTORS.find(v => v.id === p.downstreamTransport.vehicleId);
-            const df = dVehicle ? dVehicle.factor : 0;
-            const dvName = dVehicle ? dVehicle.name : "未知載具";
-            rows.push(["  (D) 分銷運輸", p.name + " 出貨 (" + dvName + ")", dWeight, dDist, df.toFixed(4), "kgCO2e", "t*km", calc.D.toFixed(4)]);
+            p.downstreamTransport.forEach(t => {
+                const dWeight = Number(t.weight) || 0;
+                const dDist = Number(t.distance) || 0;
+                const dVehicle = TRANSPORT_FACTORS.find(v => v.id === t.vehicleId);
+                const df = dVehicle ? dVehicle.factor : 0;
+                const dvName = dVehicle ? dVehicle.name : "未知載具";
+                const emission = (dWeight / 1000) * dDist * df;
+                rows.push(["  (D) 分銷運輸", displayName + " 出貨 (" + dvName + ")", dWeight, dDist, df.toFixed(4), "kg CO2e", "t*km", emission.toFixed(4)]);
+            });
 
             rows.push(["", "", "", "", "", "", "", ""]); // spacer
         });
@@ -136,23 +143,25 @@ const ComprehensiveModule: React.FC = () => {
 
         // Part 2 details
         rows.push(["[PART 2] 安裝與勞務明細 (Installation & Labor)", ""]);
-        const laborCalc = calculateLaborTotal(laborData, electricityFactor);
+        const laborElecFactor = laborData.elecFactor || electricityFactor;
+        const laborCalc = calculateLaborTotal(laborData, laborElecFactor);
         if (laborData.mode === 'B') {
-            rows.push(["項目", "活動數據", "單位", "排放量 (kgCO2e)"]);
+            rows.push(["項目", "活動數據", "單位", "排放量 (kg CO2e)"]);
             rows.push(["電力消耗", String(laborData.elecUsage || 0), "kWh", laborCalc.details.elec.toFixed(4)]);
             rows.push(["汽油消耗", String(laborData.gasolineUsage || 0), "L", laborCalc.details.gas.toFixed(4)]);
-            rows.push(["柴油消耗", String(laborData.dieselUsage || 0), "L", laborCalc.details.die.toFixed(4)]);
+            rows.push(["柴油消耗 (固定源)", String(laborData.dieselUsage || 0), "L", calculateFuelEmission(Number(laborData.dieselUsage) || 0, 'diesel').toFixed(4)]);
+            rows.push(["柴油消耗 (移動源)", String(laborData.dieselMobileUsage || 0), "L", calculateFuelEmission(Number(laborData.dieselMobileUsage) || 0, 'diesel_mobile').toFixed(4)]);
         } else {
-            rows.push(["項目", "填報數值", "單位", "排放量 (kgCO2e)"]);
-            rows.push(["直接填報公司總排放", String(laborData.totalEmissionsA || 0), "kgCO2e", laborCalc.totalCompanyEmissions.toFixed(4)]);
+            rows.push(["項目", "填報數值", "單位", "排放量 (kg CO2e)"]);
+            rows.push(["直接填報公司總排放", String(laborData.totalEmissionsA || 0), "kg CO2e", laborCalc.totalCompanyEmissions.toFixed(4)]);
         }
         rows.push(["分攤比例 (工時比)", (laborCalc.ratio * 100).toFixed(4) + "%", "公式", "契約排放 = 公司總值 * 比例"]);
-        rows.push(["勞務分攤結果", laborCalc.finalResult.toFixed(4), "kgCO2e", ""]);
+        rows.push(["勞務分攤結果", laborCalc.finalResult.toFixed(4), "kg CO2e", ""]);
         rows.push(["", ""]);
 
         // Summary Table (Final Compilation)
         rows.push(["[SUMMARY] 各項排放彙整分析表", ""]);
-        rows.push(["類別", "項目名稱", "A.原料零件", "B.原料運輸", "C.製造階段", "D.分銷運輸", "最終碳排值 (kgCO2e)"]);
+        rows.push(["類別", "項目名稱", "A.原料零件", "B.原料運輸", "C.製造階段", "D.分銷運輸", "最終碳排值 (kg CO2e)"]);
         products.forEach(p => {
             const calc = calculateProductTotal(p, materialDB, electricityFactor);
             rows.push([
@@ -220,19 +229,7 @@ const ComprehensiveModule: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="flex items-center space-x-2 bg-indigo-50 px-4 py-2 rounded-2xl border border-indigo-100">
-                        <Calendar className="w-5 h-5 text-indigo-600" />
-                        <span className="text-sm font-black text-indigo-900">評估年度</span>
-                        <select
-                            className="bg-white border-slate-200 text-sm font-bold rounded-xl py-1 pl-2 pr-8 focus:ring-2 focus:ring-indigo-200 cursor-pointer shadow-sm"
-                            value={globalYear}
-                            onChange={(e) => setGlobalYear(Number(e.target.value))}
-                        >
-                            {Object.entries(ELECTRICITY_FACTORS).map(([year, factor]) => (
-                                <option key={year} value={year}>{year}年 ({factor} kg/kWh)</option>
-                            ))}
-                        </select>
-                    </div>
+                    {/* Year selection moved to Labor section to allow product decoupling */}
 
                     <button
                         onClick={generateComprehensiveReport}
@@ -278,11 +275,11 @@ const ComprehensiveModule: React.FC = () => {
 
                             {/* Product Navigation List */}
                             <div className="mb-4 space-y-2 max-h-60 overflow-y-auto pr-1">
-                                {products.map(p => (
+                                {products.map((p, index) => (
                                     <div
                                         key={p.id}
                                         onClick={() => setActiveProductId(p.id)}
-                                        className={`w-full group p-3 rounded-2xl cursor-pointer transition-all border ${activeProductId === p.id
+                                        className={`w-full group p-3 rounded-2xl cursor-pointer transition-all border relative ${activeProductId === p.id
                                             ? 'bg-blue-600 border-blue-500 shadow-lg shadow-blue-100'
                                             : 'bg-white border-slate-100 hover:border-blue-200 hover:bg-slate-50'
                                             }`}
@@ -291,20 +288,36 @@ const ComprehensiveModule: React.FC = () => {
                                             <div className="flex items-center space-x-2">
                                                 <Box className={`w-3.5 h-3.5 ${activeProductId === p.id ? 'text-blue-100' : 'text-slate-400'}`} />
                                                 <span className={`text-xs font-black truncate max-w-[120px] ${activeProductId === p.id ? 'text-white' : 'text-slate-700'}`}>
-                                                    {p.name || '未命名產品'}
+                                                    {p.name && !p.name.startsWith('產品 ') ? p.name : `產品 ${String(index + 1).padStart(2, '0')}`}
                                                 </span>
                                             </div>
-                                            <div className={`text-[10px] font-bold ${activeProductId === p.id ? 'text-blue-200' : 'text-slate-400'}`}>
-                                                #{(p.id % 1000).toString().padStart(3, '0')}
+                                            <div className="flex items-center space-x-2">
+                                                <div className={`text-[10px] font-bold ${activeProductId === p.id ? 'text-blue-200' : 'text-slate-400'}`}>
+                                                    #{String(index + 1).padStart(2, '0')}
+                                                </div>
                                             </div>
                                         </div>
+
+                                        {/* Trash Icon */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDeleteId(p.id);
+                                                // Reset after state propagates to child
+                                                setTimeout(() => setDeleteId(null), 100);
+                                            }}
+                                            className={`absolute -right-1 -top-1 p-1.5 rounded-full bg-white shadow-md border border-slate-100 text-slate-400 hover:text-red-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 z-10`}
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+
                                         {/* Individual Total Footprint */}
                                         <div className={`mt-2 flex items-center justify-end space-x-1.5 pt-2 border-t ${activeProductId === p.id ? 'border-blue-500/50 text-blue-50' : 'border-slate-50 text-slate-400'}`}>
-                                            <span className="text-[10px] font-bold uppercase tracking-wider opacity-60">Total PCF</span>
+                                            <span className="text-[10px] font-bold tracking-wider opacity-60">Total PCF</span>
                                             <span className="text-sm font-black tabular-nums">
                                                 {(productTotals[p.id] || 0.0000).toFixed(4)}
                                             </span>
-                                            <span className="text-[10px] font-bold opacity-60">kg</span>
+                                            <span className="text-[10px] font-bold opacity-60" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span>
                                         </div>
                                     </div>
                                 ))}
@@ -361,10 +374,10 @@ const ComprehensiveModule: React.FC = () => {
                         </div>
 
                         <div className="pt-2">
-                            <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1 pl-0.5">全案契約排放總量 (Grand Total)</div>
+                            <div className="text-[10px] font-black text-indigo-400 tracking-widest mb-1 pl-0.5">全案契約排放總量 (Grand Total)</div>
                             <div className="text-4xl font-black text-slate-900 tabular-nums tracking-tighter leading-none">
                                 {grandTotal.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-                                <span className="text-sm font-bold text-slate-400 ml-2 uppercase">kgCO₂e</span>
+                                <span className="text-sm font-bold text-slate-400 ml-2" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span>
                             </div>
                         </div>
                     </div>
@@ -400,9 +413,9 @@ const ComprehensiveModule: React.FC = () => {
                                     activeProductIdProp={activeProductId}
                                     externalAddTrigger={addTrigger}
                                     externalYear={globalYear}
-                                    externalFactor={electricityFactor}
                                     externalContractName={contractInfo.name}
                                     onProductTotalsChange={setProductTotals}
+                                    externalDeleteId={deleteId}
                                     embedded={true}
                                     externalMaterialDB={materialDB}
                                 />
@@ -433,7 +446,6 @@ const ComprehensiveModule: React.FC = () => {
                             </div>
                             <LaborServiceModule
                                 onTotalChange={setLaborTotal}
-                                externalFactor={electricityFactor}
                                 externalData={laborData}
                                 onDataChange={setLaborData}
                                 externalContractInfo={contractInfo}

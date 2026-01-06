@@ -2,16 +2,17 @@ import { Product, MaterialFactor } from './types';
 import { ELECTRICITY_FACTORS, TRANSPORT_FACTORS } from './constants';
 
 // --- GWP & Fuel Constants ---
-export const GWP = { CO2: 1, CH4: 28, N2O: 265 };
+export const GWP = { CO2: 1, CH4: 27, N2O: 273 };
 export const CONVERSION_FACTOR = 4.1868 * Math.pow(10, -9);
 export const FUEL_DATA: Record<string, { name: string; kcal: number; ef: { CO2: number; CH4: number; N2O: number } }> = {
     gasoline: { name: "汽油", kcal: 7609, ef: { CO2: 69300, CH4: 25, N2O: 8 } },
-    diesel: { name: "柴油", kcal: 8642, ef: { CO2: 74100, CH4: 3, N2O: 0.6 } }
+    diesel: { name: "柴油 (固定源)", kcal: 8642, ef: { CO2: 74100, CH4: 3, N2O: 0.6 } },
+    diesel_mobile: { name: "柴油 (移動源)", kcal: 8642, ef: { CO2: 74100, CH4: 3.9, N2O: 3.9 } }
 };
 
 // --- Calculation Helpers ---
 
-export const calculateFuelEmission = (amount: number, type: 'gasoline' | 'diesel') => {
+export const calculateFuelEmission = (amount: number, type: 'gasoline' | 'diesel' | 'diesel_mobile') => {
     if (!amount || amount <= 0) return 0;
     const d = FUEL_DATA[type];
     const co2 = amount * d.kcal * CONVERSION_FACTOR * d.ef.CO2 * GWP.CO2;
@@ -42,7 +43,7 @@ export const calculateProductTotal = (product: Product | null, materialDB: Mater
     // Stage C: Manufacturing
     let C = 0;
     const manufacturing = product.manufacturing;
-    const factorToUse = electricityFactor || manufacturing.electricityFactor || 0;
+    const factorToUse = 0.606; // 強制固定為 0.606
 
     if (manufacturing.mode === 'perUnit') {
         C = (Number(manufacturing.electricityUsage) || 0) * factorToUse;
@@ -52,10 +53,10 @@ export const calculateProductTotal = (product: Product | null, materialDB: Mater
     }
 
     // Stage D: Downstream Transport
-    const dist = Number(product.downstreamTransport.distance);
-    const weight = Number(product.downstreamTransport.weight) / 1000;
-    const vehicleFactor = TRANSPORT_FACTORS.find(v => v.id === product.downstreamTransport.vehicleId)?.factor || 0;
-    const D = dist * weight * vehicleFactor;
+    const D = product.downstreamTransport.reduce((sum, t) => {
+        const factor = TRANSPORT_FACTORS.find(v => v.id === t.vehicleId)?.factor || 0;
+        return sum + ((Number(t.weight) / 1000) * Number(t.distance) * factor);
+    }, 0);
 
     return { A, B, C, D, total: A + B + C + D };
 };
@@ -74,10 +75,11 @@ export const calculateLaborTotal = (data: any, electricityFactor: number) => {
         const eUsage = Number(data.elecUsage) || 0;
         const gasUsage = Number(data.gasolineUsage) || 0;
         const dieUsage = Number(data.dieselUsage) || 0;
+        const dieMobileUsage = Number(data.dieselMobileUsage) || 0;
 
         details.elec = eUsage * electricityFactor;
         details.gas = calculateFuelEmission(gasUsage, 'gasoline');
-        details.die = calculateFuelEmission(dieUsage, 'diesel');
+        details.die = calculateFuelEmission(dieUsage, 'diesel') + calculateFuelEmission(dieMobileUsage, 'diesel_mobile');
 
         totalCompanyEmissions = details.elec + details.gas + details.die;
     }

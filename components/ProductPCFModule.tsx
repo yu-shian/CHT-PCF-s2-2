@@ -20,9 +20,9 @@ import StackedBarChart from './StackedBarChart';
 import PrecisionNumberInput from './PrecisionNumberInput';
 
 // --- Helper Functions ---
-const createDefaultProduct = (id: number, year?: number): Product => ({
+const createDefaultProduct = (id: number, year?: number, name?: string): Product => ({
     id,
-    name: '新產品 ' + new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }),
+    name: name || '',
     year: year || 2023,
     hasFullData: false,
     totalOverride: 0,
@@ -34,11 +34,14 @@ const createDefaultProduct = (id: number, year?: number): Product => ({
         electricityFactor: ELECTRICITY_FACTORS[(year || 2023) as keyof typeof ELECTRICITY_FACTORS] || 0.495,
         totalOutput: 1000
     },
-    downstreamTransport: {
-        vehicleId: 't1',
-        weight: 100,
-        distance: 50
-    }
+    downstreamTransport: [
+        {
+            id: Date.now(),
+            vehicleId: 't1',
+            weight: 100,
+            distance: 50
+        }
+    ]
 });
 
 
@@ -58,6 +61,7 @@ interface ProductPCFModuleProps {
     onProductTotalsChange?: (totals: Record<number, number>) => void;
     externalMaterialDB?: MaterialFactor[];
     isAgentMode?: boolean;
+    externalDeleteId?: number | null;
 }
 
 const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
@@ -74,7 +78,8 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
     externalFactor,
     onProductTotalsChange,
     externalMaterialDB,
-    isAgentMode = false
+    isAgentMode = false,
+    externalDeleteId
 }) => {
     // --- Data States ---
     const [materialDB, setMaterialDB] = useState<MaterialFactor[]>(INITIAL_MATERIAL_DB);
@@ -141,6 +146,13 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
             addProduct();
         }
     }, [externalAddTrigger]);
+
+    // External Delete Trigger
+    useEffect(() => {
+        if (externalDeleteId) {
+            deleteProduct(externalDeleteId);
+        }
+    }, [externalDeleteId]);
 
     // Force Sync External Year/Factor to all products
     useEffect(() => {
@@ -292,7 +304,9 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
     };
 
     const addProduct = () => {
-        const newProduct = createDefaultProduct(Date.now(), externalYear);
+        const nextIdx = activeContract.products.length + 1;
+        const defaultName = `產品 ${String(nextIdx).padStart(2, '0')}`;
+        const newProduct = createDefaultProduct(Date.now(), externalYear, defaultName);
         setContracts(prev => prev.map(c => {
             if (c.id === activeContractId) {
                 return { ...c, products: [...c.products, newProduct] };
@@ -334,8 +348,9 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
             updateProduct('manufacturing', newObj);
         } else if (section === 'downstreamTransport') {
             const currentSection = activeProduct.downstreamTransport;
-            const newObj = { ...currentSection, [field]: value };
-            updateProduct('downstreamTransport', newObj);
+            const newSection = [...currentSection];
+            newSection[index] = { ...newSection[index], [field]: value };
+            updateProduct('downstreamTransport', newSection);
         }
     };
 
@@ -365,7 +380,7 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
         rows.push(["", ""]);
 
         // Summary
-        rows.push(["階段", "排放量 (kgCO2e)", "占比"]);
+        rows.push(["階段", "排放量 (kg CO2e)", "占比"]);
         rows.push(["A.原料取得", calculation.A, (calculation.A / calculation.total * 100).toFixed(4) + "%"]);
         rows.push(["B.原料運輸", calculation.B, (calculation.B / calculation.total * 100).toFixed(4) + "%"]);
         rows.push(["C.製造階段", calculation.C, (calculation.C / calculation.total * 100).toFixed(4) + "%"]);
@@ -395,14 +410,19 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
         rows.push(["", "", "", "", "B階段小計", calculation.B]);
 
         // C. Manufacturing
-        const cVal = calculation.C;
-        rows.push(["C.製造", "電力消耗", activeProduct.manufacturing.electricityUsage, "kWh", ELECTRICITY_FACTORS[activeProduct.year as keyof typeof ELECTRICITY_FACTORS], cVal]);
+        const cFactor = 0.606;
+        const unitElec = activeProduct.manufacturing.mode === 'perUnit'
+            ? activeProduct.manufacturing.electricityUsage
+            : (activeProduct.manufacturing.totalOutput > 0 ? activeProduct.manufacturing.electricityUsage / activeProduct.manufacturing.totalOutput : 0);
+        rows.push(["C.製造", `電力消耗 (電力碳足跡係數: ${cFactor})`, `${unitElec} kWh`, "kWh", cFactor, calculation.C]);
         rows.push(["", "", "", "", "C階段小計", calculation.C]);
 
         // D. Downstream Transport
-        const dTrans = activeProduct.downstreamTransport;
-        const dFactor = TRANSPORT_FACTORS.find(vf => vf.id === dTrans.vehicleId)?.factor || 0;
-        rows.push(["D.分銷運輸", `成品運輸`, `${dTrans.weight} kg / ${dTrans.distance} km`, "t-km", dFactor, calculation.D]);
+        activeProduct.downstreamTransport.forEach(t => {
+            const dFactor = TRANSPORT_FACTORS.find(vf => vf.id === t.vehicleId)?.factor || 0;
+            const subtotal = (Number(t.weight) / 1000) * Number(t.distance) * dFactor;
+            rows.push(["D.分銷運輸", `成品運輸`, `${t.weight} kg / ${t.distance} km`, "t-km", dFactor, subtotal]);
+        });
 
         // CSV Logic
         let csvContent = "\uFEFF";
@@ -449,7 +469,7 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                             </button>
                         </div>
 
-                        {activeContract.products.map(p => (
+                        {activeContract.products.map((p, index) => (
                             <div
                                 key={p.id}
                                 onClick={() => setActiveProductId(p.id)}
@@ -458,7 +478,7 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                                 <div className="flex items-center space-x-3 overflow-hidden">
                                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${p.hasFullData ? 'bg-emerald-400' : 'bg-amber-400'}`} />
                                     <span className={`text-sm font-bold truncate ${activeProductId === p.id ? 'text-blue-900' : 'text-slate-600'}`}>
-                                        {p.name}
+                                        {p.name && !p.name.startsWith('產品 ') ? p.name : `產品 ${String(index + 1).padStart(2, '0')}`}
                                     </span>
                                 </div>
                                 <button
@@ -486,10 +506,10 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                             </div>
                             <div className="flex items-end justify-between">
                                 <div>
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">本項產品碳足跡</div>
+                                    <div className="text-[10px] font-black text-slate-400 tracking-widest mb-1">本項產品碳足跡</div>
                                     <div className="text-3xl font-black text-slate-800 tabular-nums leading-none">
                                         {calculation.total.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-                                        <span className="text-xs font-bold text-slate-400 ml-1.5 uppercase">kgCO₂e</span>
+                                        <span className="text-xs font-bold text-slate-400 ml-1.5" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span>
                                     </div>
                                 </div>
                                 <button
@@ -527,41 +547,7 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                                     onChange={(e) => updateProduct('name', e.target.value)}
                                     placeholder="產品名稱"
                                 />
-                                {!embedded && (
-                                    <>
-                                        <div className="h-6 w-px bg-slate-200"></div>
-                                        <div className="flex items-center space-x-2">
-                                            <span className="text-xs font-bold text-slate-400">評估年度</span>
-                                            <select
-                                                className="bg-slate-100 border-none text-xs font-bold rounded-lg py-1 pl-2 pr-6 focus:ring-2 focus:ring-blue-200 cursor-pointer"
-                                                value={activeProduct.year}
-                                                onChange={(e) => {
-                                                    const newYear = Number(e.target.value);
-                                                    updateProduct('year', newYear);
-                                                    // Auto-update electricity factor
-                                                    const fact = ELECTRICITY_FACTORS[newYear as keyof typeof ELECTRICITY_FACTORS] || 0.495;
-                                                    updateDeepProduct('manufacturing', 0, 'electricityFactor', fact);
-                                                }}
-                                                disabled={externalFactor !== undefined}
-                                            >
-                                                {Object.entries(ELECTRICITY_FACTORS).map(([year, factor]) => (
-                                                    <option key={year} value={year}>{year}年 ({factor} kg/kWh)</option>
-                                                ))}
-                                            </select>
-                                            <div className="h-6 w-px bg-slate-200 mx-2"></div>
-                                            <span className="text-xs font-bold text-slate-400">電力係數</span>
-                                            <div className="relative">
-                                                <PrecisionNumberInput
-                                                    className="w-20 bg-blue-50 border-none text-xs font-bold rounded-lg py-1 px-2 text-blue-700 focus:ring-2 focus:ring-blue-200"
-                                                    value={externalFactor ?? activeProduct.manufacturing.electricityFactor}
-                                                    onChange={(val) => updateDeepProduct('manufacturing', 0, 'electricityFactor', val)}
-                                                    readOnly={externalFactor !== undefined}
-                                                />
-                                                <span className="ml-1 text-[10px] text-slate-400 font-bold">kg/kWh</span>
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
+                                {/* Year/Factor hidden as per requirement for product-only contexts */}
                             </div>
 
                             <label className="flex items-center cursor-pointer group">
@@ -595,7 +581,7 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                                                 value={activeProduct.totalOverride}
                                                 onChange={(val) => updateProduct('totalOverride', val)}
                                             />
-                                            <span className="absolute right-5 top-1/2 -translate-y-1/2 font-bold text-slate-400">kgCO₂e</span>
+                                            <span className="absolute right-5 top-1/2 -translate-y-1/2 font-bold text-slate-400" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span>
                                         </div>
                                     </div>
                                     <p className="mt-4 text-sm text-slate-500 italic font-medium">※ 使用此模式將跳過細部計算與係數選擇，並於 Earth 系統中上傳佐證資料。</p>
@@ -609,7 +595,7 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                                                 <Box className="w-5 h-5 mr-3 text-blue-600" /> A. 原料取得階段
                                             </h3>
                                             <div className="flex items-center bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-100">
-                                                <span className="text-sm font-black text-blue-700 tabular-nums">{calculation.A.toFixed(4)} <span className="text-[10px] font-bold text-slate-400">kgCO₂e</span></span>
+                                                <span className="text-sm font-black text-blue-700 tabular-nums">{calculation.A.toFixed(4)} <span className="text-[10px] font-bold text-slate-400" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span></span>
                                             </div>
                                         </div>
 
@@ -724,7 +710,7 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                                                 <Truck className="w-5 h-5 mr-3 text-emerald-600" /> B. 原料運輸階段
                                             </h3>
                                             <div className="flex items-center bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-100">
-                                                <span className="text-sm font-black text-emerald-700 tabular-nums">{calculation.B.toFixed(4)} <span className="text-[10px] font-bold text-slate-400">kgCO₂e</span></span>
+                                                <span className="text-sm font-black text-emerald-700 tabular-nums">{calculation.B.toFixed(4)} <span className="text-[10px] font-bold text-slate-400" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span></span>
                                             </div>
                                         </div>
 
@@ -835,7 +821,7 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                                                 <Factory className="w-5 h-5 mr-3 text-amber-600" /> C. 製造階段
                                             </h3>
                                             <div className="flex items-center bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-100">
-                                                <span className="text-sm font-black text-amber-700 tabular-nums">{calculation.C.toFixed(4)} <span className="text-[10px] font-bold text-slate-400">kgCO₂e</span></span>
+                                                <span className="text-sm font-black text-amber-700 tabular-nums">{calculation.C.toFixed(4)} <span className="text-[10px] font-bold text-slate-400" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span></span>
                                             </div>
                                         </div>
                                         <div className="p-6 space-y-6">
@@ -860,6 +846,9 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                                                         value={activeProduct.manufacturing.electricityUsage}
                                                         onChange={(val) => updateDeepProduct('manufacturing', 0, 'electricityUsage', val)}
                                                     />
+                                                    <p className="text-[10px] text-amber-700/60 mt-1 pl-2">
+                                                        (係數固定採用電力產品碳足跡標準值: 0.606 <span style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e/kWh</span>)
+                                                    </p>
                                                 </div>
                                                 {activeProduct.manufacturing.mode === 'totalAllocated' && (
                                                     <div className="space-y-2 animate-in fade-in slide-in-from-left-4">
@@ -882,38 +871,69 @@ const ProductPCFModule: React.FC<ProductPCFModuleProps> = ({
                                                 <Package className="w-5 h-5 mr-3 text-indigo-600" /> D. 分銷運輸階段
                                             </h3>
                                             <div className="flex items-center bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-100">
-                                                <span className="text-sm font-black text-indigo-700 tabular-nums">{calculation.D.toFixed(4)} <span className="text-[10px] font-bold text-slate-400">kgCO₂e</span></span>
+                                                <span className="text-sm font-black text-indigo-700 tabular-nums">{calculation.D.toFixed(4)} <span className="text-[10px] font-bold text-slate-400" style={{ textTransform: 'none' }}>kg CO<sub>2</sub>e</span></span>
                                             </div>
                                         </div>
                                         <div className="p-6">
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pl-2 font-bold">成品重量 (kg)</label>
-                                                    <PrecisionNumberInput
-                                                        className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold focus:ring-2 focus:ring-indigo-100 transition-all tabular-nums text-slate-900"
-                                                        value={activeProduct.downstreamTransport.weight}
-                                                        onChange={(val) => updateDeepProduct('downstreamTransport', 0, 'weight', val)}
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pl-2 font-bold">運輸距離 (km)</label>
-                                                    <PrecisionNumberInput
-                                                        className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold focus:ring-2 focus:ring-indigo-100 transition-all tabular-nums text-slate-900"
-                                                        value={activeProduct.downstreamTransport.distance}
-                                                        onChange={(val) => updateDeepProduct('downstreamTransport', 0, 'distance', val)}
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pl-2 font-bold">載具/係數</label>
-                                                    <select
-                                                        className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold focus:ring-2 focus:ring-indigo-100 transition-all text-sm text-slate-900 shadow-sm"
-                                                        value={activeProduct.downstreamTransport.vehicleId}
-                                                        onChange={(e) => updateDeepProduct('downstreamTransport', 0, 'vehicleId', e.target.value)}
-                                                    >
-                                                        {TRANSPORT_FACTORS.map(v => <option key={v.id} value={v.id}>{v.name} ({v.factor})</option>)}
-                                                    </select>
-                                                </div>
-                                            </div>
+                                            <table className="w-full text-sm text-left">
+                                                <thead>
+                                                    <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                                        <th className="pb-4 pl-2 w-1/3">重量 (kg)</th>
+                                                        <th className="pb-4 w-32 text-center">距離 (km)</th>
+                                                        <th className="pb-4">載具/係數</th>
+                                                        <th className="pb-4 w-12 text-center">操作</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {activeProduct.downstreamTransport.map((t, idx) => (
+                                                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="py-3 px-2">
+                                                                <PrecisionNumberInput
+                                                                    className="w-full bg-white border border-slate-200 rounded-lg p-2 tabular-nums text-slate-900 font-medium"
+                                                                    value={t.weight}
+                                                                    onChange={(val) => updateDeepProduct('downstreamTransport', idx, 'weight', val)}
+                                                                />
+                                                            </td>
+                                                            <td className="py-3 px-2">
+                                                                <PrecisionNumberInput
+                                                                    className="w-full text-center bg-white border border-slate-200 rounded-lg p-2 tabular-nums text-slate-900 font-medium"
+                                                                    value={t.distance}
+                                                                    onChange={(val) => updateDeepProduct('downstreamTransport', idx, 'distance', val)}
+                                                                />
+                                                            </td>
+                                                            <td className="py-3 px-2">
+                                                                <select
+                                                                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-900 font-bold shadow-sm"
+                                                                    value={t.vehicleId}
+                                                                    onChange={(e) => updateDeepProduct('downstreamTransport', idx, 'vehicleId', e.target.value)}
+                                                                >
+                                                                    {TRANSPORT_FACTORS.map(v => <option key={v.id} value={v.id}>{v.name} ({v.factor})</option>)}
+                                                                </select>
+                                                            </td>
+                                                            <td className="py-3 px-2 text-center">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const newT = activeProduct.downstreamTransport.filter((_, i) => i !== idx);
+                                                                        updateProduct('downstreamTransport', newT);
+                                                                    }}
+                                                                    className="p-2 text-slate-300 hover:text-red-500"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            <button
+                                                onClick={() => {
+                                                    const newT = { id: Date.now(), weight: 0, distance: 0, vehicleId: 't1' };
+                                                    updateProduct('downstreamTransport', [...activeProduct.downstreamTransport, newT]);
+                                                }}
+                                                className="mt-6 text-sm font-bold text-indigo-600 hover:text-indigo-800 flex items-center px-4 py-2 rounded-xl hover:bg-indigo-50 transition-all w-fit"
+                                            >
+                                                <Plus className="w-4 h-4 mr-2" /> 新增分銷運輸項目
+                                            </button>
                                         </div>
                                     </section>
                                 </>

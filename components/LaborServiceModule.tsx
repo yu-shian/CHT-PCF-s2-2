@@ -118,12 +118,14 @@ const LaborServiceModule: React.FC<LaborServiceModuleProps> = ({
             const eUsage = Number(elecUsage) || 0;
             const gasUsage = Number(gasolineUsage) || 0;
             const dieUsage = Number(dieselUsage) || 0;
+            const dieMobileUsage = Number(dieselMobileUsage) || 0;
 
             const elecEmission = eUsage * elecFactor;
             const gasEmission = calculateFuelEmission(gasUsage, 'gasoline');
             const dieEmission = calculateFuelEmission(dieUsage, 'diesel');
+            const dieMobileEmission = calculateFuelEmission(dieMobileUsage, 'diesel_mobile');
 
-            totalCompanyEmissions = elecEmission + gasEmission + dieEmission;
+            totalCompanyEmissions = elecEmission + gasEmission + dieEmission + dieMobileEmission;
         }
 
         const finalResult = totalCompanyEmissions * ratio;
